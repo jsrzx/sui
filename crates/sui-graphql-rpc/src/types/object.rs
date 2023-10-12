@@ -6,7 +6,7 @@ use sui_json_rpc::name_service::NameServiceConfig;
 
 use super::big_int::BigInt;
 use super::digest::Digest;
-use super::dynamic_field::DynamicField;
+use super::dynamic_field::{DynamicField, DynamicFieldName};
 use super::move_object::MoveObject;
 use super::move_package::MovePackage;
 use super::{
@@ -67,17 +67,17 @@ impl Object {
     }
 
     /// The amount of SUI we would rebate if this object gets deleted or mutated.
-    /// This number is recalculated based on the present storage gas price.    
+    /// This number is recalculated based on the present storage gas price.
     async fn storage_rebate(&self) -> Option<&BigInt> {
         self.storage_rebate.as_ref()
     }
 
-    /// The Base64 encoded bcs serialization of the object's content.    
+    /// The Base64 encoded bcs serialization of the object's content.
     async fn bcs(&self) -> Option<&Base64> {
         self.bcs.as_ref()
     }
 
-    /// The transaction block that created this version of the object.    
+    /// The transaction block that created this version of the object.
     async fn previous_transaction_block(
         &self,
         ctx: &Context<'_>,
@@ -247,6 +247,17 @@ impl Object {
     // ) -> Result<Option<Connection<String, NameService>>> {
     //     unimplemented!()
     // }
+
+    pub async fn dynamic_field(
+        &self,
+        ctx: &Context<'_>,
+        dynamic_field_name: DynamicFieldName,
+    ) -> Result<Option<DynamicField>> {
+        ctx.data_unchecked::<PgManager>()
+            .fetch_dynamic_field_object(self.address, dynamic_field_name)
+            .await
+            .extend()
+    }
 
     pub async fn dynamic_field_connection(
         &self,
