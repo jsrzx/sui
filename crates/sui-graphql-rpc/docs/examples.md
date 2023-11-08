@@ -944,11 +944,7 @@
 >  }
 >}</pre>
 
-<<<<<<< HEAD
-### <a id=720886></a>
-=======
 ### <a id=720887></a>
->>>>>>> 05930e71e1 (move dynamicFieldConnection implementation to ObjectOwner interface, implement for owner and object)
 ### Owner
 
 ><pre>{
@@ -1483,3 +1479,4 @@
 >    }
 >  }
 >}</pre>
+
