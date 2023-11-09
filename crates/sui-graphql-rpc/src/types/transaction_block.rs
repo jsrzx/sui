@@ -28,7 +28,7 @@ use sui_json_rpc_types::{
 };
 use sui_types::digests::TransactionDigest;
 
-#[derive(SimpleObject, Clone, Eq, PartialEq)]
+#[derive(SimpleObject, Clone)]
 #[graphql(complex)]
 pub(crate) struct TransactionBlock {
     #[graphql(skip)]
@@ -78,7 +78,7 @@ impl TransactionBlock {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, SimpleObject)]
+#[derive(Clone, SimpleObject)]
 #[graphql(complex)]
 pub(crate) struct TransactionBlockEffects {
     #[graphql(skip)]

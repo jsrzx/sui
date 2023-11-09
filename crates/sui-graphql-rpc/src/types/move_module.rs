@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use async_graphql::*;
-use move_binary_format::CompiledModule;
 
-use crate::{context_data::db_data_provider::PgManager, error::Error};
+use crate::context_data::{db_data_provider::PgManager, package_cache::Module as ParsedMoveModule};
+use crate::error::Error;
 
 use super::{move_package::MovePackage, sui_address::SuiAddress};
 
 #[derive(Clone)]
 pub(crate) struct MoveModule {
-    pub native_module: CompiledModule,
+    pub parsed: ParsedMoveModule,
 }
 
 /// Represents a module in Move, a library that defines struct types
@@ -20,7 +20,7 @@ pub(crate) struct MoveModule {
 #[Object]
 impl MoveModule {
     async fn file_format_version(&self) -> u32 {
-        self.native_module.version
+        self.parsed.bytecode().version
     }
 
     // TODO: impl all fields

@@ -100,7 +100,7 @@ pub(crate) enum Error {
 type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug)]
-struct Package {
+pub(crate) struct Package {
     /// The ID this package was loaded from on-chain.
     storage_id: AccountAddress,
 
@@ -122,7 +122,7 @@ struct Package {
 type Linkage = BTreeMap<AccountAddress, AccountAddress>;
 
 #[derive(Clone, Debug)]
-struct Module {
+pub(crate) struct Module {
     bytecode: CompiledModule,
 
     /// Index mapping struct names to their defining ID, and the index for their definition in the
@@ -261,10 +261,70 @@ impl PackageCache {
 }
 
 impl Package {
-    fn module(&self, module: &str) -> Result<&Module> {
+    pub(crate) fn read(id: AccountAddress, version: u64, bcs: impl AsRef<[u8]>) -> Result<Self> {
+        let version = SequenceNumber::from_u64(version);
+        let object = bcs::from_bytes::<Object>(bcs.as_ref())?;
+
+        let Some(package) = object.data.try_as_package() else {
+            return Err(Error::NotAPackage(id));
+        };
+
+        let mut type_origins: BTreeMap<String, BTreeMap<String, AccountAddress>> = BTreeMap::new();
+        for TypeOrigin {
+            module_name,
+            struct_name,
+            package,
+        } in package.type_origin_table()
+        {
+            type_origins
+                .entry(module_name.to_string())
+                .or_default()
+                .insert(struct_name.to_string(), AccountAddress::from(*package));
+        }
+
+        let mut runtime_id = None;
+        let mut modules = BTreeMap::new();
+        for (name, bytes) in package.serialized_module_map() {
+            let origins = type_origins.remove(name).unwrap_or_default();
+            let bytecode = CompiledModule::deserialize_with_defaults(bytes)
+                .map_err(|e| Error::Deserialize(e.finish(Location::Undefined)))?;
+
+            runtime_id = Some(*bytecode.address());
+
+            let name = name.clone();
+            match Module::read(bytecode, origins) {
+                Ok(module) => modules.insert(name, module),
+                Err(struct_) => return Err(Error::NoTypeOrigin(id, name, struct_)),
+            };
+        }
+
+        let Some(runtime_id) = runtime_id else {
+            return Err(Error::EmptyPackage(id));
+        };
+
+        let linkage = package
+            .linkage_table()
+            .iter()
+            .map(|(&dep, linkage)| (dep.into(), linkage.upgraded_id.into()))
+            .collect();
+
+        Ok(Package {
+            storage_id: id,
+            runtime_id,
+            version,
+            modules,
+            linkage,
+        })
+    }
+
+    pub(crate) fn module(&self, module: &str) -> Result<&Module> {
         self.modules
             .get(module)
             .ok_or_else(|| Error::ModuleNotFound(self.storage_id, module.to_string()))
+    }
+
+    pub(crate) fn modules(&self) -> &BTreeMap<String, Module> {
+        &self.modules
     }
 
     fn struct_def(&self, module_name: &str, struct_name: &str) -> Result<StructDef> {
@@ -342,6 +402,10 @@ impl Module {
             bytecode,
             struct_index,
         })
+    }
+
+    pub(crate) fn bytecode(&self) -> &CompiledModule {
+        &self.bytecode
     }
 }
 
@@ -698,59 +762,7 @@ impl PackageStore for DbPackageStore {
             return Err(Error::PackageNotFound(id));
         };
 
-        let version = SequenceNumber::from_u64(version as u64);
-        let object = bcs::from_bytes::<Object>(&bcs)?;
-
-        let Some(package) = object.data.try_as_package() else {
-            return Err(Error::NotAPackage(id));
-        };
-
-        let mut type_origins: BTreeMap<String, BTreeMap<String, AccountAddress>> = BTreeMap::new();
-        for TypeOrigin {
-            module_name,
-            struct_name,
-            package,
-        } in package.type_origin_table()
-        {
-            type_origins
-                .entry(module_name.to_string())
-                .or_default()
-                .insert(struct_name.to_string(), AccountAddress::from(*package));
-        }
-
-        let mut runtime_id = None;
-        let mut modules = BTreeMap::new();
-        for (name, bytes) in package.serialized_module_map() {
-            let origins = type_origins.remove(name).unwrap_or_default();
-            let bytecode = CompiledModule::deserialize_with_defaults(bytes)
-                .map_err(|e| Error::Deserialize(e.finish(Location::Undefined)))?;
-
-            runtime_id = Some(*bytecode.address());
-
-            let name = name.clone();
-            match Module::read(bytecode, origins) {
-                Ok(module) => modules.insert(name, module),
-                Err(struct_) => return Err(Error::NoTypeOrigin(id, name, struct_)),
-            };
-        }
-
-        let Some(runtime_id) = runtime_id else {
-            return Err(Error::EmptyPackage(id));
-        };
-
-        let linkage = package
-            .linkage_table()
-            .iter()
-            .map(|(&dep, linkage)| (dep.into(), linkage.upgraded_id.into()))
-            .collect();
-
-        Ok(Package {
-            storage_id: id,
-            runtime_id,
-            version,
-            modules,
-            linkage,
-        })
+        Package::read(id, version as u64, bcs)
     }
 }
 
